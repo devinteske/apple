@@ -101,6 +101,8 @@
 #include <sys/prctl.h>	/* For prctl() and PR_SET_DUMPABLE */
 #endif
 
+#include "ssh-agent-notify.h"
+
 typedef enum {
 	AUTH_UNUSED,
 	AUTH_SOCKET,
@@ -162,6 +164,18 @@ extern char *__progname;
 static long lifetime = 0;
 
 static int fingerprint_hash = SSH_FP_HASH_DEFAULT;
+
+static void
+notify_user(struct identity *id)
+{
+	char *p;
+
+	p = sshkey_fingerprint(id->key, fingerprint_hash, SSH_FP_DEFAULT);
+	debug("notifying key challenge signed for fingerprint %s path %s", p,
+	    id->comment);
+	notify_user_macos(p, id->comment);
+	free(p);
+}
 
 static void
 close_socket(SocketEntry *e)
@@ -361,6 +375,9 @@ process_authentication_challenge1(SocketEntry *e)
 		if ((r = sshbuf_put_u8(msg, SSH_AGENT_RSA_RESPONSE)) != 0 ||
 		    (r = sshbuf_put(msg, mdbuf, sizeof(mdbuf))) != 0)
 			fatal("%s: buffer error: %s", __func__, ssh_err(r));
+
+		notify_user(id);
+
 		goto send;
 	}
 
@@ -422,6 +439,7 @@ process_sign_request2(SocketEntry *e)
 		if ((r = sshbuf_put_u8(msg, SSH2_AGENT_SIGN_RESPONSE)) != 0 ||
 		    (r = sshbuf_put_string(msg, signature, slen)) != 0)
 			fatal("%s: buffer error: %s", __func__, ssh_err(r));
+		if (id) notify_user(id);
 	} else if ((r = sshbuf_put_u8(msg, SSH_AGENT_FAILURE)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 
